@@ -2,81 +2,87 @@
 //https://github.com/websockets/ws/blob/master/doc/ws.md#class-websocketserver
 
 const WebSocket = require('ws');
+const args = require('./args')(process);
 
-WebSocketService = function() {
+/**
+ * Server options
+ */
+const wsServerOptions = {
+  port: args.port || 8080,
+  perMessageDeflate: {
+    zlibDeflateOptions: { // See zlib defaults.
+      chunkSize: 1024,
+      memLevel: 7,
+      level: 3
+    },
+    zlibInflateOptions: { chunkSize: 10 * 1024 },
+    clientNoContextTakeover: true, // Defaults to negotiated value.
+    serverNoContextTakeover: true, // Defaults to negotiated value.
+    serverMaxWindowBits: 10, // Defaults to negotiated value.
+    concurrencyLimit: 10, // Limits zlib concurrency for perf.
+    threshold: 1024 // Size (in bytes) below which messages should not be compressed.
+  }
+};
+
+/**
+ * WSServer options
+ */
+const defaultOptions = {
+  startCallback: function start() {
+    console.log('Server is listening on port 8080');
+  },
+  errorCallback: function error(msg) {
+    console.log('Server encountered error', msg);
+  },
+  beforeBroadcastCallback: function beforeBroadcast(data, clients) { return true; },
+  afterBroadcastCallback: function afterBroadcast(data, clients) { return true; },
+  clientConnectedCallback: function clientConnected(client, request) { return true; },
+  clientDisconnectedCallback: function clientDisconnectedConnect(client, request) { return true; },
+}
+
+/**
+ * WebsocketServer service
+ */
+WebSocketServer = function (options) {
   let service = this;
   service._server = null;
-
-  /**
-   * Get arguments of whole script
-   * @returns {string[]}
-   */
-  service.args = process.argv.splice(2);
-
-  /**
-   * Log info if not in silent mode
-   */
-  service.log = function log() {
-    if ( service.args.includes('--silent') || service.args.includes('-s') ) return;
-
-    var logArguments = Array.prototype.slice.call(arguments);
-    //logArguments.unshift(new Date());
-    console.log(...logArguments);
-  }
+  service.options = Object.assign({}, defaultOptions, options || {});
 
   service.start = function start() {
-    service._server = new WebSocket.Server({
-      port: 8080,
-      perMessageDeflate: {
-        zlibDeflateOptions: {
-          // See zlib defaults.
-          chunkSize: 1024,
-          memLevel: 7,
-          level: 3
-        },
-        zlibInflateOptions: {
-          chunkSize: 10 * 1024
-        },
-        // Other options settable:
-        clientNoContextTakeover: true, // Defaults to negotiated value.
-        serverNoContextTakeover: true, // Defaults to negotiated value.
-        serverMaxWindowBits: 10, // Defaults to negotiated value.
-        // Below options specified as default values.
-        concurrencyLimit: 10, // Limits zlib concurrency for perf.
-        threshold: 1024 // Size (in bytes) below which messages
-        // should not be compressed.
-      }
-    });
-    service._server.on('listening', function() {
-      service.log('Server is listening on port 8080');
-    });
-    service._server.on('error', function(msg) {
-      service.log('Server encountered error', msg);
-    });
+    service._server = new WebSocket.Server(wsServerOptions);
+    // Server started
+    service._server.on('listening', service.options.startCallback);
+
+    // Server encountered error
+    service._server.on('error', service.options.errorCallback);
+
+    // Server is broadcasting data
     service._server.broadcast = function broadcast(data) {
-      service._server.clients.forEach(function each(client) {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(data);
-        }
-      });
+      if (service.options.beforeBroadcastCallback(data, service._server.clients) === true) {
+        service._server.clients.forEach(function each(client) {
+          if (client.readyState === WebSocket.OPEN) client.send(data);
+        });
+      }
+      service.options.afterBroadcastCallback(data, service._server.clients);
     };
-    service._server.on('connection', function connection(ws, req) {
-      const ip = req.connection.remoteAddress;
-      //const ip = req.headers['x-forwarded-for'].split(/\s*,\s*/)[0];
-      service.log('Client connected on IP: '+ip);
 
-      ws.on('message', function incoming(msg) {
-        msg = JSON.parse(msg);
-        service.log('received:', msg.timestamp, msg.service || '', msg.value || '');
-        ws.send(JSON.stringify({timestamp:Date.now()}));
+    // Client connected
+    service._server.on('connection', function connection(client, req) {
+      console.log('Client connected on IP:', req.connection.remoteAddress);
+      service.options.clientConnectedCallback(client, req);
+
+      client.on('close', function close() {
+        console.log('Client disconnected');
+        service.options.clientDisconnectedCallback(client, req);
       });
 
-      ws.on('close', function incoming(message) {
-        service.log('Client disconnected');
+      client.on('message', function message(msg) {
+        msg = JSON.parse(msg);
+        console.log('received:', msg.timestamp, msg.service || '', msg.value || '');
+        client.send(JSON.stringify({ timestamp: Date.now() }));
       });
     });
   }
 }
 
-WSS = new WebSocketService;
-WSS.start();
+module.exports = WebSocketServer;

@@ -1,15 +1,19 @@
 {
   "name": "node-chat",
   "version": "0.1.0",
+  "description": "",
+  "keywords": [],
+  "repository": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "ws": "^6.2.1",
+    "minimist": "^1.2.0",
+    "terminal-kit": "^1.27.2"
+  },
+  "devDependencies": {},
   "scripts": {
     "server": "node ./server/server.js",
     "client": "node ./client/client.js"
-  },
-  "devDependencies": {
-    "@babel/preset-es2016": "^7.0.0-beta.53",
-    "electron": "^4.0.8"
-  },
-  "dependencies": {
-    "ws": "6.2.1"
   }
 }
